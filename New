@@ -1,47 +1,32 @@
-DECLARE @Year      INT = 2025;          -- e.g., 2025
-DECLARE @Month     INT = NULL;          -- 1..12 or NULL for all months
-DECLARE @Resource  NVARCHAR(200) = NULL;-- filter specific person or NULL
+DECLARE @Year  INT = 2025;  -- Example: 2025
+DECLARE @Month INT = NULL;  -- Example: 6, or NULL for all months
+DECLARE @Resource NVARCHAR(200) = NULL; -- Optional: specific tester name
 
-DECLARE @StartOfYear   DATE = DATEFROMPARTS(@Year, 1, 1);
-DECLARE @StartNextYear DATE = DATEFROMPARTS(@Year + 1, 1, 1);
-
-WITH created AS (
-    SELECT
-        T.TS_RESPONSIBLE                 AS Resource,           -- <-- owner/author
-        YEAR(T.TS_CREATION_DATE)         AS Y,
-        MONTH(T.TS_CREATION_DATE)        AS M,
-        COUNT(*)                         AS Created_TA
-    FROM [amfc_isqat_db].[td].[TEST] AS T
-    WHERE T.TS_NAME LIKE 'TA\_%' ESCAPE '\'
-      AND T.TS_CREATION_DATE >= @StartOfYear
-      AND T.TS_CREATION_DATE <  @StartNextYear
-      AND (@Month    IS NULL OR MONTH(T.TS_CREATION_DATE) = @Month)
-      AND (@Resource IS NULL OR T.TS_RESPONSIBLE = @Resource)
-    GROUP BY T.TS_RESPONSIBLE, YEAR(T.TS_CREATION_DATE), MONTH(T.TS_CREATION_DATE)
-),
-modified AS (
-    SELECT
-        T.TS_RESPONSIBLE                 AS Resource,
-        YEAR(T.TS_VTS)                   AS Y,
-        MONTH(T.TS_VTS)                  AS M,
-        COUNT(*)                         AS Modified_TA
-    FROM [amfc_isqat_db].[td].[TEST] AS T
-    WHERE T.TS_NAME LIKE 'TA\_%' ESCAPE '\'
-      AND T.TS_VTS >= @StartOfYear
-      AND T.TS_VTS <  @StartNextYear
-      AND T.TS_CREATION_DATE < @StartOfYear     -- true modifications (not newly created this year)
-      AND (@Month    IS NULL OR MONTH(T.TS_VTS) = @Month)
-      AND (@Resource IS NULL OR T.TS_RESPONSIBLE = @Resource)
-    GROUP BY T.TS_RESPONSIBLE, YEAR(T.TS_VTS), MONTH(T.TS_VTS)
-)
 SELECT
-    COALESCE(c.Y, m.Y)            AS Run_Year,
-    COALESCE(c.M, m.M)            AS Run_Month,
-    COALESCE(c.Resource, m.Resource) AS Resource,
-    ISNULL(c.Created_TA,  0)      AS Created_TA,
-    ISNULL(m.Modified_TA, 0)      AS Modified_TA,
-    ISNULL(c.Created_TA, 0) + ISNULL(m.Modified_TA, 0) AS Total_TA
-FROM created c
-FULL OUTER JOIN modified m
-  ON c.Resource = m.Resource AND c.Y = m.Y AND c.M = m.M
-ORDER BY Resource, Run_Year, Run_Month;
+    YEAR(R.RN_EXECUTION_DATE)  AS Run_Year,
+    MONTH(R.RN_EXECUTION_DATE) AS Run_Month,
+    ISNULL(NULLIF(R.RN_TESTER_NAME,''), R.RN_OWNER) AS Resource,
+    SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Automated_Count,
+    SUM(CASE WHEN T.TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Manual_Count,
+    COUNT(*) AS Total_Count,
+    CONCAT(
+        CAST(
+            CAST(
+                100.0 * SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END)
+                / NULLIF(COUNT(*), 0)
+            AS DECIMAL(5,2)) AS VARCHAR(10)
+        ),
+        '%'
+    ) AS Automation_Pct
+FROM [amfc_isqat_db].[td].[RUN]  AS R
+JOIN [amfc_isqat_db].[td].[TEST] AS T
+  ON R.RN_TEST_ID = T.TS_TEST_ID
+WHERE R.RN_STATUS IN ('Passed','Failed')
+  AND (@Year IS NULL OR YEAR(R.RN_EXECUTION_DATE) = @Year)
+  AND (@Month IS NULL OR MONTH(R.RN_EXECUTION_DATE) = @Month)
+  AND (@Resource IS NULL OR ISNULL(NULLIF(R.RN_TESTER_NAME,''), R.RN_OWNER) = @Resource)
+GROUP BY 
+    YEAR(R.RN_EXECUTION_DATE),
+    MONTH(R.RN_EXECUTION_DATE),
+    ISNULL(NULLIF(R.RN_TESTER_NAME,''), R.RN_OWNER)
+ORDER BY Run_Year, Run_Month, Resource;

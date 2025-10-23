@@ -1,6 +1,5 @@
--- Params (example values; set to NULL to ignore)
-DECLARE @Year  INT = NULL;  -- e.g., 2024 or NULL
-DECLARE @Month INT = NULL;  -- 1..12 or NULL
+DECLARE @Year  INT = NULL;  -- Example: 2024, or NULL for all years
+DECLARE @Month INT = NULL;  -- Example: 6, or NULL for all months
 
 SELECT
     YEAR(R.RN_EXECUTION_DATE)  AS Run_Year,
@@ -8,13 +7,21 @@ SELECT
     SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Automated_Count,
     SUM(CASE WHEN T.TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Manual_Count,
     COUNT(1) AS Total_Count,
-    CAST(100.0 *
-         SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END)
-         / NULLIF(COUNT(1), 0) AS DECIMAL(5,2)) AS Automation_Pct
+    -- Include % symbol in the final result
+    CONCAT(
+        CAST(
+            CAST(
+                100.0 * SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) /
+                NULLIF(COUNT(1), 0)
+                AS DECIMAL(5,2)
+            ) AS VARCHAR(10)
+        ),
+        '%'
+    ) AS Automation_Pct
 FROM [amfc_isqat_db].[td].[RUN]  AS R
 JOIN [amfc_isqat_db].[td].[TEST] AS T
   ON R.RN_TEST_ID = T.TS_TEST_ID
-WHERE R.RN_STATUS IN ('Passed','Failed')
+WHERE R.RN_STATUS IN ('Passed', 'Failed')
   AND (@Year  IS NULL OR YEAR(R.RN_EXECUTION_DATE)  = @Year)
   AND (@Month IS NULL OR MONTH(R.RN_EXECUTION_DATE) = @Month)
 GROUP BY YEAR(R.RN_EXECUTION_DATE), MONTH(R.RN_EXECUTION_DATE)

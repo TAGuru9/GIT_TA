@@ -1,14 +1,48 @@
-DECLARE @Year  INT = 2025;  -- Example: 2025
-DECLARE @Month INT = NULL;  -- Example: 6, or NULL for all months
+DECLARE @Year  INT = 2025;      -- e.g., 2025
+DECLARE @Month INT = NULL;      -- 1..12 or NULL for all months
 
+DECLARE @StartOfYear   DATE = DATEFROMPARTS(@Year, 1, 1);
+DECLARE @StartNextYear DATE = DATEFROMPARTS(@Year + 1, 1, 1);
+
+WITH created AS (
+    SELECT
+        YEAR(T.TS_CREATION_DATE)  AS Y,
+        MONTH(T.TS_CREATION_DATE) AS M,
+        SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Created_Automated,
+        SUM(CASE WHEN T.TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Created_Manual,
+        COUNT(*) AS Created_Total
+    FROM [amfc_isqat_db].[td].[TEST] AS T
+    WHERE T.TS_CREATION_DATE >= @StartOfYear
+      AND T.TS_CREATION_DATE <  @StartNextYear
+      AND (@Month IS NULL OR MONTH(T.TS_CREATION_DATE) = @Month)
+    GROUP BY YEAR(T.TS_CREATION_DATE), MONTH(T.TS_CREATION_DATE)
+),
+modified AS (
+    SELECT
+        YEAR(T.TS_VTS)  AS Y,
+        MONTH(T.TS_VTS) AS M,
+        SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Modified_Automated,
+        SUM(CASE WHEN T.TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Modified_Manual,
+        COUNT(*) AS Modified_Total
+    FROM [amfc_isqat_db].[td].[TEST] AS T
+    WHERE T.TS_VTS            >= @StartOfYear
+      AND T.TS_VTS            <  @StartNextYear
+      AND T.TS_CREATION_DATE  <  @StartOfYear   -- true modifications only
+      AND (@Month IS NULL OR MONTH(T.TS_VTS) = @Month)
+    GROUP BY YEAR(T.TS_VTS), MONTH(T.TS_VTS)
+)
 SELECT
-    YEAR(T.TS_CREATION_DATE)  AS Run_Year,
-    MONTH(T.TS_CREATION_DATE) AS Run_Month,
-    SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Created_Automated,
-    SUM(CASE WHEN T.TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Created_Manual,
-    COUNT(*) AS Created_Total
-FROM [amfc_isqat_db].[td].[TEST] AS T
-WHERE YEAR(T.TS_CREATION_DATE) = @Year
-  AND (@Month IS NULL OR MONTH(T.TS_CREATION_DATE) = @Month)
-GROUP BY YEAR(T.TS_CREATION_DATE), MONTH(T.TS_CREATION_DATE)
+    COALESCE(c.Y, m.Y) AS Run_Year,
+    COALESCE(c.M, m.M) AS Run_Month,
+
+    ISNULL(c.Created_Automated, 0) AS Created_Automated,
+    ISNULL(c.Created_Manual,    0) AS Created_Manual,
+    ISNULL(c.Created_Total,     0) AS Created_Total,
+
+    ISNULL(m.Modified_Automated, 0) AS Modified_Automated,
+    ISNULL(m.Modified_Manual,    0) AS Modified_Manual,
+    ISNULL(m.Modified_Total,     0) AS Modified_Total
+FROM created c
+FULL OUTER JOIN modified m
+  ON c.Y = m.Y AND c.M = m.M
 ORDER BY Run_Year, Run_Month;

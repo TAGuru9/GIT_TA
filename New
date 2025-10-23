@@ -1,28 +1,34 @@
-DECLARE @Year  INT = NULL;  -- Example: 2024, or NULL for all years
-DECLARE @Month INT = NULL;  -- Example: 6, or NULL for all months
+DECLARE @Year INT = 2025;  -- Example: 2025
+DECLARE @Month INT = NULL; -- Example: 6 for June, or NULL for all months
 
+/* --- Created and Modified Test Counts by Month --- */
 SELECT
-    YEAR(R.RN_EXECUTION_DATE)  AS Run_Year,
-    MONTH(R.RN_EXECUTION_DATE) AS Run_Month,
-    SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Automated_Count,
-    SUM(CASE WHEN T.TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Manual_Count,
-    COUNT(1) AS Total_Count,
-    -- Include % symbol in the final result
+    YEAR(TS_CREATION_DATE) AS Run_Year,
+    MONTH(TS_CREATION_DATE) AS Run_Month,
+
+    -- Created
+    SUM(CASE WHEN TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Created_Automated,
+    SUM(CASE WHEN TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) AS Created_Manual,
+    COUNT(*) AS Created_Total,
+
+    -- Modified
+    SUM(CASE WHEN TS_NAME LIKE 'TA\_%' ESCAPE '\' AND YEAR(TS_VTS) = @Year THEN 1 ELSE 0 END) AS Modified_Automated,
+    SUM(CASE WHEN TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' AND YEAR(TS_VTS) = @Year THEN 1 ELSE 0 END) AS Modified_Manual,
+    SUM(CASE WHEN YEAR(TS_VTS) = @Year THEN 1 ELSE 0 END) AS Modified_Total,
+
+    -- Automation %
     CONCAT(
         CAST(
             CAST(
-                100.0 * SUM(CASE WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END) /
-                NULLIF(COUNT(1), 0)
+                100.0 * SUM(CASE WHEN TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 ELSE 0 END)
+                / NULLIF(COUNT(*), 0)
                 AS DECIMAL(5,2)
             ) AS VARCHAR(10)
         ),
         '%'
     ) AS Automation_Pct
-FROM [amfc_isqat_db].[td].[RUN]  AS R
-JOIN [amfc_isqat_db].[td].[TEST] AS T
-  ON R.RN_TEST_ID = T.TS_TEST_ID
-WHERE R.RN_STATUS IN ('Passed', 'Failed')
-  AND (@Year  IS NULL OR YEAR(R.RN_EXECUTION_DATE)  = @Year)
-  AND (@Month IS NULL OR MONTH(R.RN_EXECUTION_DATE) = @Month)
-GROUP BY YEAR(R.RN_EXECUTION_DATE), MONTH(R.RN_EXECUTION_DATE)
+FROM [amfc_isqat_db].[td].[TEST]
+WHERE YEAR(TS_CREATION_DATE) = @Year
+  AND (@Month IS NULL OR MONTH(TS_CREATION_DATE) = @Month)
+GROUP BY YEAR(TS_CREATION_DATE), MONTH(TS_CREATION_DATE)
 ORDER BY Run_Year, Run_Month;

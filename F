@@ -1,28 +1,6 @@
 <# 
-.SYNOPSIS
-  Mask selected columns in a delimited text/CSV file based on a config CSV.
-
-.PARAMETER InputPath
-  Path to the source data file (.txt/.csv) with a header row.
-
-.PARAMETER ConfigPath
-  Path to the config CSV with columns: ColumnName, Mask
-
-.PARAMETER OutputPath
-  Path to write the masked file.
-
-.PARAMETER Delimiter
-  Optional. Specify a delimiter if you don’t want auto-detect. 
-  Examples: ',', '|', "`t", ';'
-
-.PARAMETER MaskChar
-  Optional. Character used for masking. Default: 'X'
-
-.EXAMPLE
-  .\Mask-File.ps1 -InputPath 'C:\data\input.txt' -ConfigPath 'C:\data\mask_config.csv' -OutputPath 'C:\data\masked_output.txt'
-
-.EXAMPLE
-  .\Mask-File.ps1 -InputPath 'C:\data\input.csv' -ConfigPath 'C:\data\mask_config.csv' -OutputPath 'C:\data\masked_output.csv' -Delimiter '|' -MaskChar '*'
+Mask selected columns in a delimited text/CSV file based on a config file.
+Config file can be .csv, .xlsx, or .xls. Expected columns: ColumnName, Mask
 #>
 
 param(
@@ -30,12 +8,12 @@ param(
     [string]$InputPath,
 
     [Parameter(Mandatory=$true)]
-    [string]$ConfigPath,
+    [string]$ConfigPath,   # can be .csv / .xlsx / .xls
 
     [Parameter(Mandatory=$true)]
     [string]$OutputPath,
 
-    [string]$Delimiter,      # If omitted, script will auto-detect
+    [string]$Delimiter,      # optional override; else auto-detect
     [char]$MaskChar = 'X'
 )
 
@@ -48,21 +26,12 @@ function Test-File {
 
 function Get-DelimiterAuto {
     param([string]$Path)
-
-    # Read first non-empty line
     $line = (Get-Content -LiteralPath $Path -TotalCount 50 | Where-Object { $_ -and $_.Trim().Length -gt 0 } | Select-Object -First 1)
-
-    if (-not $line) { return ',' } # default fallback
-
+    if (-not $line) { return ',' }
     $candidates = @(',', '|', "`t", ';')
-    $counts = foreach ($c in $candidates) {
-        [pscustomobject]@{
-            Delim = $c
-            Count = ($line.ToCharArray() | ForEach-Object { $_ }) -join '' | Out-Null; ($line -split [regex]::Escape($c)).Count - 1
-        }
-    }
-    # Pick the delimiter that appears the most in the header line
-    $best = $counts | Sort-Object Count -Descending | Select-Object -First 1
+    $best = $candidates | ForEach-Object {
+        [pscustomobject]@{ Delim = $_; Count = ($line -split [regex]::Escape($_)).Count - 1 }
+    } | Sort-Object Count -Descending | Select-Object -First 1
     if ($best.Count -gt 0) { return $best.Delim } else { return ',' }
 }
 
@@ -72,57 +41,113 @@ function Should-Mask {
 }
 
 function Get-MaskedValue {
-    param(
-        [AllowNull()][object]$Value,
-        [char]$MaskChar
-    )
+    param([AllowNull()][object]$Value, [char]$MaskChar)
     if ($null -eq $Value) { return $null }
     $s = [string]$Value
     if ($s.Length -eq 0) { return $s }
     return ($MaskChar.ToString() * $s.Length)
 }
 
+function Read-Config {
+    param([string]$ConfigPath)
+
+    $ext = [IO.Path]::GetExtension($ConfigPath).ToLowerInvariant()
+
+    if ($ext -in @('.xlsx', '.xls')) {
+        # Try ImportExcel first
+        $importExcelAvailable = Get-Module -ListAvailable -Name ImportExcel | ForEach-Object { $_ } | Measure-Object | Select-Object -ExpandProperty Count
+        if ($importExcelAvailable -gt 0) {
+            try {
+                $cfg = Import-Excel -Path $ConfigPath
+                return $cfg
+            } catch {
+                Write-Warning "Import-Excel failed: $_. Falling back to Excel COM if available."
+            }
+        }
+
+        # Fallback: Excel COM (requires Microsoft Excel)
+        $excel = $null; $workbook = $null; $worksheet = $null
+        try {
+            $excel = New-Object -ComObject Excel.Application
+            $excel.Visible = $false
+            $workbook = $excel.Workbooks.Open($ConfigPath)
+            # Use first worksheet
+            $worksheet = $workbook.Worksheets.Item(1)
+            $used = $worksheet.UsedRange
+            $vals = $used.Value2
+
+            if (-not $vals) { throw "Config Excel appears empty: $ConfigPath" }
+
+            # Build objects from headers
+            # $vals is 2D array 1-based [row, col]
+            $rowCount = $vals.GetLength(0)
+            $colCount = $vals.GetLength(1)
+
+            # Read headers (row 1)
+            $headers = for ($c=1; $c -le $colCount; $c++) { [string]$vals[1, $c] }
+
+            # Create PSCustomObjects for each subsequent row
+            $list = New-Object System.Collections.Generic.List[object]
+            for ($r=2; $r -le $rowCount; $r++) {
+                $h = @{}
+                for ($c=1; $c -le $colCount; $c++) {
+                    $h[$headers[$c-1]] = $vals[$r, $c]
+                }
+                $list.Add([pscustomobject]$h) | Out-Null
+            }
+            return $list
+        } catch {
+            throw "Failed to read Excel config ($ConfigPath). Ensure ImportExcel module is installed or Excel is available. Error: $_"
+        } finally {
+            if ($workbook) { $workbook.Close($false) | Out-Null }
+            if ($excel) { $excel.Quit() | Out-Null }
+            # Release COM objects cleanly
+            foreach ($o in @($worksheet, $workbook, $excel)) {
+                if ($o) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($o) }
+            }
+            [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+        }
+    }
+    elseif ($ext -eq '.csv') {
+        return Import-Csv -LiteralPath $ConfigPath
+    }
+    else {
+        throw "Unsupported config extension '$ext'. Use .csv, .xlsx, or .xls."
+    }
+}
+
 # ---- Validate inputs
 Test-File -Path $InputPath
 Test-File -Path $ConfigPath
 
-# ---- Determine delimiter
+# ---- Determine delimiter for DATA file
 if (-not $PSBoundParameters.ContainsKey('Delimiter') -or [string]::IsNullOrWhiteSpace($Delimiter)) {
     $Delimiter = Get-DelimiterAuto -Path $InputPath
 }
+Write-Host "Using delimiter for data file: [$Delimiter]" -ForegroundColor Cyan
 
-Write-Host "Using delimiter: [$Delimiter]" -ForegroundColor Cyan
+# ---- Read config (CSV or Excel)
+$configRows = Read-Config -ConfigPath $ConfigPath
 
-# ---- Read config and build mask set
-try {
-    $configRows = Import-Csv -LiteralPath $ConfigPath
-} catch {
-    throw "Failed to read config CSV: $ConfigPath. $_"
-}
-
+# ---- Build mask set
 $maskColumns =
     $configRows |
-    Where-Object { $_.ColumnName -and (Should-Mask $_.Mask) } |
+    Where-Object { $_.ColumnName -and (Should-Mask ([string]$_.Mask)) } |
     Select-Object -ExpandProperty ColumnName -Unique
 
 if (-not $maskColumns -or $maskColumns.Count -eq 0) {
-    Write-Warning "No columns marked to mask (Y) in $ConfigPath. The output will be a copy of the input."
+    Write-Warning "No columns marked to mask (Y) in config. The output will be a copy of the input."
 }
 
-# ---- Import data
+# ---- Import data file
 try {
     $rows = Import-Csv -LiteralPath $InputPath -Delimiter $Delimiter
 } catch {
     throw "Failed to read input file as delimited text: $InputPath. $_"
 }
 
-if (-not $rows -or $rows.Count -eq 0) {
-    Write-Warning "No data rows found in input file: $InputPath"
-}
-
 # ---- Mask rows
 $maskedRows = foreach ($row in $rows) {
-    # Create a mutable copy
     $h = @{}
     foreach ($prop in $row.PSObject.Properties.Name) {
         $val = $row.$prop
@@ -135,7 +160,7 @@ $maskedRows = foreach ($row in $rows) {
     [pscustomobject]$h
 }
 
-# ---- Export
+# ---- Export masked data
 try {
     $maskedRows | Export-Csv -LiteralPath $OutputPath -Delimiter $Delimiter -NoTypeInformation -Encoding UTF8
     Write-Host "Masked file written to: $OutputPath" -ForegroundColor Green

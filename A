@@ -1,0 +1,15 @@
+SELECT
+    RC.RCYC_ID,
+    RC.RCYC_NAME AS [Cycle Name],
+    RC.RCYC_PARENT_ID AS [Parent Release ID],
+    R.REL_NAME AS [Release Name],
+    RC.RCYC_START_DATE AS [Start Date],
+    RC.RCYC_END_DATE AS [End Date],
+    RC.RCYC_STATUS AS [Status]
+FROM
+    td.RELEASE_CYCLES RC
+LEFT JOIN
+    td.RELEASES R
+    ON RC.RCYC_PARENT_ID = R.REL_ID
+ORDER BY
+    R.REL_NAME, RC.RCYC_NAME;

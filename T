@@ -1,61 +1,35 @@
-@echo on
+# path to your html report
+$reportPath = "C:\Logs\smokefinancemodule.html"
 
-REM ===========================================
-REM 1. Go to your tool/bin folder
-REM ===========================================
-C:
-CD "C:\TA_PeopleSoft-1.0-SNAPSHOT\bin"
+# read html
+$html = Get-Content $reportPath -Raw
 
-REM ===========================================
-REM 2. Run your PeopleSoft test (your original line)
-REM    adjust arguments exactly as you use them
-REM ===========================================
-PeopleSoft.bat "PepperMill" "CorpProducts" "peoplesoft" "qafin" "2025_11" "RegDr-112025" "smokefinancemodule" "C:\TA_PeopleSoft-1.0-SNAPSHOT\testreader\filereader.json" "jenkin_args=CGV;integration;http://prwdjknap001-ad:180..." > "C:\Logs\outputsmkfinance.txt" 2>&1
+# parse html
+$parsed = Invoke-WebRequest -Body $html -UseBasicParsing
 
-REM ===========================================
-REM 3. Build a temporary PowerShell script that
-REM    reads latest HTML report and prints summary
-REM ===========================================
-set PSFILE=%temp%\parse_html_report.ps1
-del "%PSFILE%" 2>nul
+# get all table rows
+$rows = $parsed.ParsedHtml.getElementsByTagName("tr")
 
-echo # auto-created by BAT > "%PSFILE%"
-echo $report = Get-ChildItem 'C:\Logs' -Filter '*smokefinance*.html' ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 >> "%PSFILE%"
-echo if (-not $report) { Write-Host 'No smoke finance HTML report found in C:\Logs'; exit } >> "%PSFILE%"
-echo $html = Get-Content $report.FullName -Raw >> "%PSFILE%"
-echo $parsed = Invoke-WebRequest -Body $html -UseBasicParsing >> "%PSFILE%"
-echo $rows = $parsed.ParsedHtml.getElementsByTagName('tr') >> "%PSFILE%"
-echo $results = @() >> "%PSFILE%"
-echo foreach ($row in $rows) { >> "%PSFILE%"
-echo ^    $cells = $row.getElementsByTagName('td') >> "%PSFILE%"
-echo ^    if ($cells.Count -ge 2) { >> "%PSFILE%"
-echo ^        $test = ($cells.Item(0).innerText).Trim() >> "%PSFILE%"
-echo ^        $status = ($cells.Item(1).innerText).Trim() >> "%PSFILE%"
-echo ^        if ($test -and $status) { >> "%PSFILE%"
-echo ^            $results += [PSCustomObject]@{Test=$test; Status=$status} >> "%PSFILE%"
-echo ^        } >> "%PSFILE%"
-echo ^    } >> "%PSFILE%"
-echo } >> "%PSFILE%"
-echo if (-not $results) { Write-Host 'HTML found but no test rows detected.'; exit } >> "%PSFILE%"
-echo $summary = $results ^| Group-Object Status ^| Sort-Object Name >> "%PSFILE%"
-echo Write-Host '===================================' >> "%PSFILE%"
-echo Write-Host ('      Overall Test Status') >> "%PSFILE%"
-echo Write-Host ('      Report: ' + $report.Name) >> "%PSFILE%"
-echo Write-Host '===================================' >> "%PSFILE%"
-echo foreach ($s in $summary) { Write-Host ($s.Name + ': ' + $s.Count) } >> "%PSFILE%"
-echo if ($results.Status -match 'Fail|FAILED') { >> "%PSFILE%"
-echo ^    Write-Host 'Overall Result: FAILED' >> "%PSFILE%"
-echo } else { >> "%PSFILE%"
-echo ^    Write-Host 'Overall Result: PASSED' >> "%PSFILE%"
-echo } >> "%PSFILE%"
+$tests = @()
 
-REM ===========================================
-REM 4. Run the PowerShell script
-REM ===========================================
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PSFILE%"
+foreach ($row in $rows) {
+    $cells = $row.getElementsByTagName("td")
+    if ($cells.Count -ge 2) {
+        # assume col 0 = test name, col 1 = status
+        $name   = ($cells.Item(0).innerText).Trim()
+        $status = ($cells.Item(1).innerText).Trim()
+        if ($name -and $status) {
+            $tests += [pscustomobject]@{
+                Name   = $name
+                Status = $status
+            }
+        }
+    }
+}
 
-REM ===========================================
-REM 5. Keep window open
-REM ===========================================
-timeout /t -1
-pause
+# now count
+$passCount = ($tests | Where-Object { $_.Status -match '^pass$|^passed$' }).Count
+$failCount = ($tests | Where-Object { $_.Status -match '^fail$|^failed$' }).Count
+
+Write-Host "Pass: $passCount"
+Write-Host "Fail: $failCount"

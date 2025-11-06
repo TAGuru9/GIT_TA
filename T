@@ -1,50 +1,61 @@
 @echo on
+
 REM ===========================================
-REM 1. Go to tool/bin folder
+REM 1. Go to your tool/bin folder
 REM ===========================================
 C:
 CD "C:\TA_PeopleSoft-1.0-SNAPSHOT\bin"
 
 REM ===========================================
-REM 2. Run your PeopleSoft test
+REM 2. Run your PeopleSoft test (your original line)
+REM    adjust arguments exactly as you use them
 REM ===========================================
 PeopleSoft.bat "PepperMill" "CorpProducts" "peoplesoft" "qafin" "2025_11" "RegDr-112025" "smokefinancemodule" "C:\TA_PeopleSoft-1.0-SNAPSHOT\testreader\filereader.json" "jenkin_args=CGV;integration;http://prwdjknap001-ad:180..." > "C:\Logs\outputsmkfinance.txt" 2>&1
 
 REM ===========================================
-REM 3. Parse latest HTML report and print status
+REM 3. Build a temporary PowerShell script that
+REM    reads latest HTML report and prints summary
 REM ===========================================
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-"$report = Get-ChildItem 'C:\Logs' -Filter '*smokefinance*.html' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; `
- if (-not $report) { Write-Host 'No smoke finance HTML report found in C:\Logs'; exit }; `
- $html = Get-Content $report.FullName -Raw; `
- $parsed = Invoke-WebRequest -Body $html -UseBasicParsing; `
- $rows = $parsed.ParsedHtml.getElementsByTagName('tr'); `
- $results = @(); `
- foreach ($row in $rows) { `
-     $cells = $row.getElementsByTagName('td'); `
-     if ($cells.Count -ge 2) { `
-         $test = ($cells.Item(0).innerText).Trim(); `
-         $status = ($cells.Item(1).innerText).Trim(); `
-         if ($test -and $status) { `
-             $results += [PSCustomObject]@{Test=$test; Status=$status} `
-         } `
-     } `
- }; `
- if (-not $results) { Write-Host 'HTML found but no test rows detected.'; exit }; `
- $summary = $results | Group-Object Status | Sort-Object Name; `
- Write-Host '==================================='; `
- Write-Host ('      Overall Test Status'); `
- Write-Host ('      Report: ' + $report.Name); `
- Write-Host '==================================='; `
- foreach ($s in $summary) { Write-Host ($s.Name + ': ' + $s.Count) }; `
- if ($results.Status -match 'Fail|FAILED') { `
-     Write-Host 'Overall Result: FAILED'; `
- } else { `
-     Write-Host 'Overall Result: PASSED'; `
- }"
+set PSFILE=%temp%\parse_html_report.ps1
+del "%PSFILE%" 2>nul
+
+echo # auto-created by BAT > "%PSFILE%"
+echo $report = Get-ChildItem 'C:\Logs' -Filter '*smokefinance*.html' ^| Sort-Object LastWriteTime -Descending ^| Select-Object -First 1 >> "%PSFILE%"
+echo if (-not $report) { Write-Host 'No smoke finance HTML report found in C:\Logs'; exit } >> "%PSFILE%"
+echo $html = Get-Content $report.FullName -Raw >> "%PSFILE%"
+echo $parsed = Invoke-WebRequest -Body $html -UseBasicParsing >> "%PSFILE%"
+echo $rows = $parsed.ParsedHtml.getElementsByTagName('tr') >> "%PSFILE%"
+echo $results = @() >> "%PSFILE%"
+echo foreach ($row in $rows) { >> "%PSFILE%"
+echo ^    $cells = $row.getElementsByTagName('td') >> "%PSFILE%"
+echo ^    if ($cells.Count -ge 2) { >> "%PSFILE%"
+echo ^        $test = ($cells.Item(0).innerText).Trim() >> "%PSFILE%"
+echo ^        $status = ($cells.Item(1).innerText).Trim() >> "%PSFILE%"
+echo ^        if ($test -and $status) { >> "%PSFILE%"
+echo ^            $results += [PSCustomObject]@{Test=$test; Status=$status} >> "%PSFILE%"
+echo ^        } >> "%PSFILE%"
+echo ^    } >> "%PSFILE%"
+echo } >> "%PSFILE%"
+echo if (-not $results) { Write-Host 'HTML found but no test rows detected.'; exit } >> "%PSFILE%"
+echo $summary = $results ^| Group-Object Status ^| Sort-Object Name >> "%PSFILE%"
+echo Write-Host '===================================' >> "%PSFILE%"
+echo Write-Host ('      Overall Test Status') >> "%PSFILE%"
+echo Write-Host ('      Report: ' + $report.Name) >> "%PSFILE%"
+echo Write-Host '===================================' >> "%PSFILE%"
+echo foreach ($s in $summary) { Write-Host ($s.Name + ': ' + $s.Count) } >> "%PSFILE%"
+echo if ($results.Status -match 'Fail|FAILED') { >> "%PSFILE%"
+echo ^    Write-Host 'Overall Result: FAILED' >> "%PSFILE%"
+echo } else { >> "%PSFILE%"
+echo ^    Write-Host 'Overall Result: PASSED' >> "%PSFILE%"
+echo } >> "%PSFILE%"
 
 REM ===========================================
-REM 4. Keep window open (optional)
+REM 4. Run the PowerShell script
+REM ===========================================
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PSFILE%"
+
+REM ===========================================
+REM 5. Keep window open
 REM ===========================================
 timeout /t -1
 pause

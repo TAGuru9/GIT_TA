@@ -1,0 +1,50 @@
+@echo on
+REM ===========================================
+REM 1. Go to tool/bin folder
+REM ===========================================
+C:
+CD "C:\TA_PeopleSoft-1.0-SNAPSHOT\bin"
+
+REM ===========================================
+REM 2. Run your PeopleSoft test
+REM ===========================================
+PeopleSoft.bat "PepperMill" "CorpProducts" "peoplesoft" "qafin" "2025_11" "RegDr-112025" "smokefinancemodule" "C:\TA_PeopleSoft-1.0-SNAPSHOT\testreader\filereader.json" "jenkin_args=CGV;integration;http://prwdjknap001-ad:180..." > "C:\Logs\outputsmkfinance.txt" 2>&1
+
+REM ===========================================
+REM 3. Parse latest HTML report and print status
+REM ===========================================
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+"$report = Get-ChildItem 'C:\Logs' -Filter '*smokefinance*.html' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; `
+ if (-not $report) { Write-Host 'No smoke finance HTML report found in C:\Logs'; exit }; `
+ $html = Get-Content $report.FullName -Raw; `
+ $parsed = Invoke-WebRequest -Body $html -UseBasicParsing; `
+ $rows = $parsed.ParsedHtml.getElementsByTagName('tr'); `
+ $results = @(); `
+ foreach ($row in $rows) { `
+     $cells = $row.getElementsByTagName('td'); `
+     if ($cells.Count -ge 2) { `
+         $test = ($cells.Item(0).innerText).Trim(); `
+         $status = ($cells.Item(1).innerText).Trim(); `
+         if ($test -and $status) { `
+             $results += [PSCustomObject]@{Test=$test; Status=$status} `
+         } `
+     } `
+ }; `
+ if (-not $results) { Write-Host 'HTML found but no test rows detected.'; exit }; `
+ $summary = $results | Group-Object Status | Sort-Object Name; `
+ Write-Host '==================================='; `
+ Write-Host ('      Overall Test Status'); `
+ Write-Host ('      Report: ' + $report.Name); `
+ Write-Host '==================================='; `
+ foreach ($s in $summary) { Write-Host ($s.Name + ': ' + $s.Count) }; `
+ if ($results.Status -match 'Fail|FAILED') { `
+     Write-Host 'Overall Result: FAILED'; `
+ } else { `
+     Write-Host 'Overall Result: PASSED'; `
+ }"
+
+REM ===========================================
+REM 4. Keep window open (optional)
+REM ===========================================
+timeout /t -1
+pause

@@ -1,0 +1,20 @@
+# Define the report path
+$reportPath = "C:\PepperMill"
+
+# Get all HTML files in the folder
+$files = Get-ChildItem -Path $reportPath -Filter "*.html"
+
+# Loop through each file and extract pass/fail counts
+foreach ($file in $files) {
+    $content = Get-Content $file.FullName -Raw
+
+    # Use regex to find Pass and Fail counts (adjust if needed)
+    $passCount = ([regex]::Matches($content, 'Pass', 'IgnoreCase')).Count
+    $failCount = ([regex]::Matches($content, 'Fail', 'IgnoreCase')).Count
+
+    # Display results
+    Write-Host "File: $($file.Name)"
+    Write-Host "   Pass: $passCount"
+    Write-Host "   Fail: $failCount"
+    Write-Host "-------------------------------"
+}

@@ -1,3 +1,4 @@
-=IF(C2<0.75,"Does Not Meet",
- IF(C2<0.9,"Partially Meets",
- IF(C2=1,"Meets","Exceeds")))
+=IF(D2="Exceeds","🟢",
+ IF(D2="Meets","🟢",
+ IF(D2="Partially Meets","🟡",
+ IF(D2="Does Not Meet","🔴",""))))

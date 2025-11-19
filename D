@@ -1,29 +1,18 @@
-DECLARE @Year INT = YEAR(GETDATE());   -- or set e.g. = 2025
+DECLARE @Year INT = YEAR(GETDATE());
 
 SELECT
-    ISNULL(T.TS_USER_03, '(No Application)') AS Application,
-
-    SUM(CASE 
-            WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 
-            ELSE 0 
-        END) AS Automated_Count,
-
-    SUM(CASE 
-            WHEN T.TS_NAME NOT LIKE 'TA\_%' ESCAPE '\' THEN 1 
-            ELSE 0 
-        END) AS Manual_Count,
-
-    COUNT(*) AS Total_Count,
-
-    CAST(
-        100.0 * SUM(CASE 
-                        WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 
-                        ELSE 0 
-                    END)
-        / NULLIF(COUNT(*), 0)
-        AS DECIMAL(5,2)
-    ) AS Automation_Pct
+    T.TS_NAME,
+    T.TS_STEPS,
+    T.TS_PATH,
+    T.TS_SUBJECT AS Subject_ID,
+    A.AL_DESCRIPTION AS Subject_Name,
+    A.AL_ABSOLUTE_PATH AS Subject_Folder_Path,
+    T.TS_STATUS,
+    T.TS_RESPONSIBLE,
+    T.TS_CREATION_DATE
 FROM [amfc_isqat_db].[td].[TEST] T
-WHERE YEAR(T.TS_CREATION_DATE) = @Year      -- filter to this year
-GROUP BY ISNULL(T.TS_USER_03, '(No Application)')
-ORDER BY Application;
+LEFT JOIN [amfc_isqat_db].[td].[ALL_LISTS] A
+       ON T.TS_SUBJECT = A.AL_ITEM_ID
+WHERE T.TS_USER_03 = 'Client Letter'
+  AND YEAR(T.TS_CREATION_DATE) = @Year
+ORDER BY A.AL_ABSOLUTE_PATH, T.TS_NAME;

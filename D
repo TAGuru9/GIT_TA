@@ -1,7 +1,7 @@
-DECLARE @Year INT = YEAR(GETDATE());   -- this year
+DECLARE @Year INT = YEAR(GETDATE());   -- or set e.g. = 2025
 
 SELECT
-    ISNULL(T.TS_USER_01, 'Unknown') AS Application,
+    ISNULL(T.TS_USER_03, '(No Application)') AS Application,
 
     SUM(CASE 
             WHEN T.TS_NAME LIKE 'TA\_%' ESCAPE '\' THEN 1 
@@ -23,10 +23,7 @@ SELECT
         / NULLIF(COUNT(*), 0)
         AS DECIMAL(5,2)
     ) AS Automation_Pct
-FROM [amfc_isqat_db].[td].[RUN]  AS R
-JOIN [amfc_isqat_db].[td].[TEST] AS T
-    ON R.RN_TEST_ID = T.TS_TEST_ID
-WHERE R.RN_STATUS IN ('Passed','Failed')
-  AND YEAR(R.RN_EXECUTION_DATE) = @Year     -- this year only
-GROUP BY ISNULL(T.TS_USER_01, 'Unknown')
+FROM [amfc_isqat_db].[td].[TEST] T
+WHERE YEAR(T.TS_CREATION_DATE) = @Year      -- filter to this year
+GROUP BY ISNULL(T.TS_USER_03, '(No Application)')
 ORDER BY Application;

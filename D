@@ -1,18 +1,38 @@
 DECLARE @Year INT = YEAR(GETDATE());
 
+WITH SubjectTree AS (
+    SELECT
+        A.AL_ITEM_ID,
+        A.AL_FATHER_ID,
+        A.AL_DESCRIPTION,
+        CAST(A.AL_DESCRIPTION AS NVARCHAR(MAX)) AS FullPath
+    FROM [amfc_isqat_db].[td].[ALL_LISTS] A
+    WHERE A.AL_FATHER_ID = 0
+
+    UNION ALL
+
+    SELECT
+        C.AL_ITEM_ID,
+        C.AL_FATHER_ID,
+        C.AL_DESCRIPTION,
+        CAST(P.FullPath + '\' + C.AL_DESCRIPTION AS NVARCHAR(MAX)) AS FullPath
+    FROM [amfc_isqat_db].[td].[ALL_LISTS] C
+    JOIN SubjectTree P
+        ON C.AL_FATHER_ID = P.AL_ITEM_ID
+)
 SELECT
     T.TS_NAME,
     T.TS_STEPS,
     T.TS_PATH,
-    T.TS_SUBJECT AS Subject_ID,
-    A.AL_DESCRIPTION AS Subject_Name,
-    A.AL_ABSOLUTE_PATH AS Subject_Folder_Path,
+    T.TS_SUBJECT              AS Subject_ID,
+    S.AL_DESCRIPTION          AS Subject_Name,       -- leaf folder
+    S.FullPath                AS Subject_Folder_Path,
     T.TS_STATUS,
     T.TS_RESPONSIBLE,
     T.TS_CREATION_DATE
 FROM [amfc_isqat_db].[td].[TEST] T
-LEFT JOIN [amfc_isqat_db].[td].[ALL_LISTS] A
-       ON T.TS_SUBJECT = A.AL_ITEM_ID
+LEFT JOIN SubjectTree S
+       ON T.TS_SUBJECT = S.AL_ITEM_ID
 WHERE T.TS_USER_03 = 'Client Letter'
   AND YEAR(T.TS_CREATION_DATE) = @Year
-ORDER BY A.AL_ABSOLUTE_PATH, T.TS_NAME;
+ORDER BY S.FullPath, T.TS_NAME;

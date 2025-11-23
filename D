@@ -1,38 +1,7 @@
-DECLARE @Year INT = YEAR(GETDATE());
+This year, I demonstrated strong leadership, accountability, and operational discipline in managing the Test Automation function. I consistently applied sound judgment and data-driven decision-making to support high-quality delivery while balancing risk, timelines, and business priorities. I effectively navigated complex and shifting situations by providing clarity, structure, and calm direction to my team and cross-functional partners.
 
-WITH SubjectTree AS (
-    SELECT
-        A.AL_ITEM_ID,
-        A.AL_FATHER_ID,
-        A.AL_DESCRIPTION,
-        CAST(A.AL_DESCRIPTION AS NVARCHAR(MAX)) AS FullPath
-    FROM [amfc_isqat_db].[td].[ALL_LISTS] A
-    WHERE A.AL_FATHER_ID = 0
+I hold myself and my team accountable for outcomes and work hard to deliver measurable results. Throughout the year, I proactively addressed challenges, raised risks early, and ensured we stayed focused on execution. I approached difficult conversations with transparency and respect, advocating for quality and ensuring alignment across Product, Development, DevOps, and Business teams. I maintained strong collaborative relationships by listening actively, encouraging open communication, and promoting shared ownership of goals.
 
-    UNION ALL
+I invested time into developing both myself and my team by sharing best practices, encouraging growth, and creating opportunities to take on higher-value work. I actively sought out efficiencies and introduced improvements to frameworks, processes, and workflows that strengthened quality and accelerated delivery. I remained forward-thinking and promoted innovation by identifying new opportunities to scale automation and modernize our approach.
 
-    SELECT
-        C.AL_ITEM_ID,
-        C.AL_FATHER_ID,
-        C.AL_DESCRIPTION,
-        CAST(P.FullPath + '\' + C.AL_DESCRIPTION AS NVARCHAR(MAX)) AS FullPath
-    FROM [amfc_isqat_db].[td].[ALL_LISTS] C
-    JOIN SubjectTree P
-        ON C.AL_FATHER_ID = P.AL_ITEM_ID
-)
-SELECT
-    T.TS_NAME,
-    T.TS_STEPS,
-    T.TS_PATH,
-    T.TS_SUBJECT              AS Subject_ID,
-    S.AL_DESCRIPTION          AS Subject_Name,       -- leaf folder
-    S.FullPath                AS Subject_Folder_Path,
-    T.TS_STATUS,
-    T.TS_RESPONSIBLE,
-    T.TS_CREATION_DATE
-FROM [amfc_isqat_db].[td].[TEST] T
-LEFT JOIN SubjectTree S
-       ON T.TS_SUBJECT = S.AL_ITEM_ID
-WHERE T.TS_USER_03 = 'Client Letter'
-  AND YEAR(T.TS_CREATION_DATE) = @Year
-ORDER BY S.FullPath, T.TS_NAME;
+I worked to create an environment where my team feels supported, valued, and engaged. I recognize contributions, encourage participation, and help maintain morale during demanding periods. Through strong partnership, initiative, and a commitment to continuous improvement, I consistently contributed to organizational goals and supported a positive, collaborative culture.”

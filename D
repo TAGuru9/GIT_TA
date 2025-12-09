@@ -2,19 +2,41 @@
  CONFIG SECTION
 ============================= #>
 
-# Your test runner .bat file
 $batFile      = "C:\Automation\runTests.bat"
-
-# Folder where your HTML reports are generated
 $reportFolder = "C:\Automation\Reports"
 
-# Email settings
 $smtpServer   = "smtp.yourcompany.com"
 $fromEmail    = "qa-automation@yourcompany.com"
 $toEmail      = "qa-team@yourcompany.com"
 
 <# =============================
- 1. LET USER CHOOSE TEST SUITE
+ 1. SELECT ENVIRONMENT
+============================= #>
+
+$envMenu = @(
+    @{ Number = 1; Name = "DEV";  Arg = "DEV" }
+    @{ Number = 2; Name = "QA";   Arg = "QA" }
+    @{ Number = 3; Name = "UAT";  Arg = "UAT" }
+    @{ Number = 4; Name = "PROD"; Arg = "PROD" }
+)
+
+Write-Host "Select Environment:`n"
+$envMenu | ForEach-Object { Write-Host "$($_.Number)) $($_.Name)" }
+
+$envChoice = Read-Host "Enter option number"
+$selectedEnv = $envMenu | Where-Object { $_.Number -eq [int]$envChoice }
+
+if (-not $selectedEnv) {
+    Write-Host "Invalid environment. Exiting."
+    exit 1
+}
+
+$envArg = $selectedEnv.Arg
+Write-Host "You selected environment: $envArg"
+Write-Host ""
+
+<# =============================
+ 2. SELECT TEST SUITE
 ============================= #>
 
 $menu = @(
@@ -23,50 +45,48 @@ $menu = @(
     @{ Number = 3; Name = "API Suite";        Arg = "API" }
 )
 
-Write-Host "Select Test Suite to Run:`n"
+Write-Host "Select Test Suite:`n"
 $menu | ForEach-Object { Write-Host "$($_.Number)) $($_.Name)" }
 
 $choice = Read-Host "Enter option number"
-$selected = $menu | Where-Object { $_.Number -eq [int]$choice }
+$selectedSuite = $menu | Where-Object { $_.Number -eq [int]$choice }
 
-if (-not $selected) {
-    Write-Host "Invalid option. Exiting."
+if (-not $selectedSuite) {
+    Write-Host "Invalid suite. Exiting."
     exit 1
 }
 
-$testSuiteArg = $selected.Arg
-Write-Host "You selected: $($selected.Name) ($testSuiteArg)"
+$testSuiteArg = $selectedSuite.Arg
+Write-Host "You selected test suite: $($selectedSuite.Name)"
 Write-Host ""
 
 <# =============================
- 2. GET USER ID + PASSWORD
+ 3. GET USER CREDENTIALS
 ============================= #>
 
 $userId = Read-Host "Enter User ID"
 
-# Secure password prompt
 $passwordSecure = Read-Host "Enter Password" -AsSecureString
-# Convert to plain text ONLY if you really must pass it as an argument
-# (Not recommended for security, but matches your requirement)
 $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($passwordSecure)
 $passwordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
 [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
 
 <# =============================
- 3. SEND "STARTING" EMAIL
+ 4. SEND START EMAIL
 ============================= #>
 
 $startTime = Get-Date
 
-$startSubject = "Automation starting: $($selected.Name) by $userId"
+$startSubject = "Automation Starting: $($selectedSuite.Name) | Env: $envArg"
 $startBody = @"
 Automation run is starting.
 
-Suite   : $($selected.Name) ($testSuiteArg)
-User    : $userId
-Started : $startTime
+Environment: $envArg
+Suite      : $($selectedSuite.Name)
+User       : $userId
+Started    : $startTime
 
-This email was triggered BEFORE running the .bat file.
+This email was triggered BEFORE starting automation.
 "@
 
 Send-MailMessage -From $fromEmail -To $toEmail `
@@ -77,46 +97,31 @@ Write-Host "Start email sent."
 Write-Host ""
 
 <# =============================
- 4. RUN THE BAT FILE
+ 5. RUN THE BAT FILE
 ============================= #>
 
-Write-Host "Running bat file..."
-Write-Host "$batFile $testSuiteArg $userId ******"
+Write-Host "Running .bat file..."
+Write-Host "$batFile $envArg $testSuiteArg $userId ******"
 
-# Call .bat with: suite, user id, password
-& $batFile $testSuiteArg $userId $passwordPlain
+& $batFile $envArg $testSuiteArg $userId $passwordPlain
 $exitCode = $LASTEXITCODE
 
-Write-Host "Bat finished with exit code: $exitCode"
+Write-Host "Bat finished. Exit Code: $exitCode"
 Write-Host ""
 
 <# =============================
- 5. PARSE HTML REPORTS
-   (COUNT PASS / FAIL)
+ 6. PARSE HTML REPORTS
 ============================= #>
-
-if (-not (Test-Path $reportFolder)) {
-    Write-Host "Report folder not found: $reportFolder"
-    exit 1
-}
 
 $passTotal = 0
 $failTotal = 0
 
-# Example: count occurrences of 'pass' and 'fail' (case-insensitive)
-# You can adjust regex to match your actual report format
 Get-ChildItem $reportFolder -Filter *.html | ForEach-Object {
     $content = Get-Content $_.FullName -Raw
 
-    $passTotal += ([regex]::Matches(
-        $content, 'pass', 
-        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
-    )).Count
-
-    $failTotal += ([regex]::Matches(
-        $content, 'fail', 
-        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
-    )).Count
+    # Adjust regex based on your report format
+    $passTotal += ([regex]::Matches($content, 'pass', [regexoptions]::IgnoreCase)).Count
+    $failTotal += ([regex]::Matches($content, 'fail', [regexoptions]::IgnoreCase)).Count
 }
 
 $endTime = Get-Date
@@ -126,28 +131,28 @@ Write-Host "Total Fail: $failTotal"
 Write-Host ""
 
 <# =============================
- 6. SEND "COMPLETED" EMAIL
+ 7. SEND COMPLETION EMAIL
 ============================= #>
 
-$endSubject = "Automation completed: $($selected.Name) | Pass: $passTotal, Fail: $failTotal"
+$endSubject = "Automation Completed: $($selectedSuite.Name) | Env: $envArg | Pass: $passTotal | Fail: $failTotal"
 
 $endBody = @"
 Automation run completed.
 
-Suite    : $($selected.Name) ($testSuiteArg)
-User     : $userId
-Started  : $startTime
-Finished : $endTime
-ExitCode : $exitCode
+Environment : $envArg
+Suite       : $($selectedSuite.Name)
+User        : $userId
+Started     : $startTime
+Finished    : $endTime
+Exit Code   : $exitCode
 
-Total Pass : $passTotal
-Total Fail : $failTotal
+PASS: $passTotal
+FAIL: $failTotal
 
 Reports Folder:
 $reportFolder
 "@
 
-# Attach all HTML reports (optional – you can remove -Attachments line)
 $attachments = (Get-ChildItem $reportFolder -Filter *.html).FullName
 
 Send-MailMessage -From $fromEmail -To $toEmail `
@@ -155,4 +160,4 @@ Send-MailMessage -From $fromEmail -To $toEmail `
                  -SmtpServer $smtpServer `
                  -Attachments $attachments
 
-Write-Host "Summary email sent."
+Write-Host "Completion email sent."

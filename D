@@ -1,163 +1,21 @@
-<# =============================
- CONFIG SECTION
-============================= #>
+$psBat = "C:\TA_PeopleSoft-1.0-SNAPSHOT\bin\PeopleSoft.bat"
 
-$batFile      = "C:\Automation\runTests.bat"
-$reportFolder = "C:\Automation\Reports"
-
-$smtpServer   = "smtp.yourcompany.com"
-$fromEmail    = "qa-automation@yourcompany.com"
-$toEmail      = "qa-team@yourcompany.com"
-
-<# =============================
- 1. SELECT ENVIRONMENT
-============================= #>
-
-$envMenu = @(
-    @{ Number = 1; Name = "DEV";  Arg = "DEV" }
-    @{ Number = 2; Name = "QA";   Arg = "QA" }
-    @{ Number = 3; Name = "UAT";  Arg = "UAT" }
-    @{ Number = 4; Name = "PROD"; Arg = "PROD" }
+$batArgs = @(
+    "PepperMill"
+    "CorpProducts"
+    "peoplesoft"
+    $envArg
+    "2025_11"
+    "RegDrll2025"
+    $testSuiteArg
+    "userid:$userId;password:$passwordPlain"
+    "C:\TA_PeopleSoft-1.0-SNAPSHOT\testreader\clientfile"
 )
 
-Write-Host "Select Environment:`n"
-$envMenu | ForEach-Object { Write-Host "$($_.Number)) $($_.Name)" }
+Write-Host "`nExecuting PeopleSoft module:"
+Write-Host "$psBat $($batArgs -join ' ')`n"
 
-$envChoice = Read-Host "Enter option number"
-$selectedEnv = $envMenu | Where-Object { $_.Number -eq [int]$envChoice }
+& $psBat @batArgs
+$exitcode = $LASTEXITCODE
 
-if (-not $selectedEnv) {
-    Write-Host "Invalid environment. Exiting."
-    exit 1
-}
-
-$envArg = $selectedEnv.Arg
-Write-Host "You selected environment: $envArg"
-Write-Host ""
-
-<# =============================
- 2. SELECT TEST SUITE
-============================= #>
-
-$menu = @(
-    @{ Number = 1; Name = "Smoke Suite";      Arg = "SMOKE" }
-    @{ Number = 2; Name = "Regression Suite"; Arg = "REGRESSION" }
-    @{ Number = 3; Name = "API Suite";        Arg = "API" }
-)
-
-Write-Host "Select Test Suite:`n"
-$menu | ForEach-Object { Write-Host "$($_.Number)) $($_.Name)" }
-
-$choice = Read-Host "Enter option number"
-$selectedSuite = $menu | Where-Object { $_.Number -eq [int]$choice }
-
-if (-not $selectedSuite) {
-    Write-Host "Invalid suite. Exiting."
-    exit 1
-}
-
-$testSuiteArg = $selectedSuite.Arg
-Write-Host "You selected test suite: $($selectedSuite.Name)"
-Write-Host ""
-
-<# =============================
- 3. GET USER CREDENTIALS
-============================= #>
-
-$userId = Read-Host "Enter User ID"
-
-$passwordSecure = Read-Host "Enter Password" -AsSecureString
-$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($passwordSecure)
-$passwordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
-[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-
-<# =============================
- 4. SEND START EMAIL
-============================= #>
-
-$startTime = Get-Date
-
-$startSubject = "Automation Starting: $($selectedSuite.Name) | Env: $envArg"
-$startBody = @"
-Automation run is starting.
-
-Environment: $envArg
-Suite      : $($selectedSuite.Name)
-User       : $userId
-Started    : $startTime
-
-This email was triggered BEFORE starting automation.
-"@
-
-Send-MailMessage -From $fromEmail -To $toEmail `
-                 -Subject $startSubject -Body $startBody `
-                 -SmtpServer $smtpServer
-
-Write-Host "Start email sent."
-Write-Host ""
-
-<# =============================
- 5. RUN THE BAT FILE
-============================= #>
-
-Write-Host "Running .bat file..."
-Write-Host "$batFile $envArg $testSuiteArg $userId ******"
-
-& $batFile $envArg $testSuiteArg $userId $passwordPlain
-$exitCode = $LASTEXITCODE
-
-Write-Host "Bat finished. Exit Code: $exitCode"
-Write-Host ""
-
-<# =============================
- 6. PARSE HTML REPORTS
-============================= #>
-
-$passTotal = 0
-$failTotal = 0
-
-Get-ChildItem $reportFolder -Filter *.html | ForEach-Object {
-    $content = Get-Content $_.FullName -Raw
-
-    # Adjust regex based on your report format
-    $passTotal += ([regex]::Matches($content, 'pass', [regexoptions]::IgnoreCase)).Count
-    $failTotal += ([regex]::Matches($content, 'fail', [regexoptions]::IgnoreCase)).Count
-}
-
-$endTime = Get-Date
-
-Write-Host "Total Pass: $passTotal"
-Write-Host "Total Fail: $failTotal"
-Write-Host ""
-
-<# =============================
- 7. SEND COMPLETION EMAIL
-============================= #>
-
-$endSubject = "Automation Completed: $($selectedSuite.Name) | Env: $envArg | Pass: $passTotal | Fail: $failTotal"
-
-$endBody = @"
-Automation run completed.
-
-Environment : $envArg
-Suite       : $($selectedSuite.Name)
-User        : $userId
-Started     : $startTime
-Finished    : $endTime
-Exit Code   : $exitCode
-
-PASS: $passTotal
-FAIL: $failTotal
-
-Reports Folder:
-$reportFolder
-"@
-
-$attachments = (Get-ChildItem $reportFolder -Filter *.html).FullName
-
-Send-MailMessage -From $fromEmail -To $toEmail `
-                 -Subject $endSubject -Body $endBody `
-                 -SmtpServer $smtpServer `
-                 -Attachments $attachments
-
-Write-Host "Completion email sent."
+Write-Host "`nPeopleSoft module completed. Exit code: $exitcode"

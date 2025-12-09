@@ -1,29 +1,22 @@
-SELECT  
-    YEAR(RN_EXECUTION_DATE) AS YEAR,
-    MONTH(RN_EXECUTION_DATE) AS MONTH,
-    RN_TESTER_NAME AS RESOURCE,
-    
-    -- Automation Count
-    SUM(CASE WHEN RN_TEST_TYPE = 'AUTOMATED' THEN 1 ELSE 0 END) AS Automation_Run_Cnt,
-    
-    -- Manual Count
-    SUM(CASE WHEN RN_TEST_TYPE <> 'AUTOMATED' THEN 1 ELSE 0 END) AS Manual_Run_Cnt,
-    
-    -- Total
-    COUNT(*) AS Total_Run_Cnt,
-    
-    -- Automation %
-    CASE 
-        WHEN COUNT(*) = 0 THEN 0
-        ELSE ROUND((CAST(SUM(CASE WHEN RN_TEST_TYPE = 'AUTOMATED' THEN 1 END) AS FLOAT) 
-                   / COUNT(*)) * 100, 2)
-    END AS Automation_Percentage
-FROM amfc_isqat_db.td.run
-GROUP BY  
+SELECT
+    YEAR(RN_EXECUTION_DATE)  AS [YEAR],
+    MONTH(RN_EXECUTION_DATE) AS [MONTH],
+    RN_TESTER_NAME           AS [RESOURCE],
+
+    -- total executions
+    COUNT(*) AS EXECUTION_COUNT,
+
+    -- optional: breakouts by status
+    SUM(CASE WHEN RN_STATUS = 'Passed' THEN 1 ELSE 0 END) AS Passed_Count,
+    SUM(CASE WHEN RN_STATUS = 'Failed' THEN 1 ELSE 0 END) AS Failed_Count,
+    SUM(CASE WHEN RN_STATUS = 'Not Completed' THEN 1 ELSE 0 END) AS NotCompleted_Count
+FROM amfc_isqat_db.td.run   -- use your actual schema.table name
+-- WHERE RN_EXECUTION_DATE >= '2024-01-01'   -- (optional filter)
+GROUP BY
     YEAR(RN_EXECUTION_DATE),
     MONTH(RN_EXECUTION_DATE),
     RN_TESTER_NAME
-ORDER BY  
-    YEAR,
-    MONTH,
-    RESOURCE;
+ORDER BY
+    [YEAR],
+    [MONTH],
+    [RESOURCE];

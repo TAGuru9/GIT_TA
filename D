@@ -1,0 +1,158 @@
+<# =============================
+ CONFIG SECTION
+============================= #>
+
+# Your test runner .bat file
+$batFile      = "C:\Automation\runTests.bat"
+
+# Folder where your HTML reports are generated
+$reportFolder = "C:\Automation\Reports"
+
+# Email settings
+$smtpServer   = "smtp.yourcompany.com"
+$fromEmail    = "qa-automation@yourcompany.com"
+$toEmail      = "qa-team@yourcompany.com"
+
+<# =============================
+ 1. LET USER CHOOSE TEST SUITE
+============================= #>
+
+$menu = @(
+    @{ Number = 1; Name = "Smoke Suite";      Arg = "SMOKE" }
+    @{ Number = 2; Name = "Regression Suite"; Arg = "REGRESSION" }
+    @{ Number = 3; Name = "API Suite";        Arg = "API" }
+)
+
+Write-Host "Select Test Suite to Run:`n"
+$menu | ForEach-Object { Write-Host "$($_.Number)) $($_.Name)" }
+
+$choice = Read-Host "Enter option number"
+$selected = $menu | Where-Object { $_.Number -eq [int]$choice }
+
+if (-not $selected) {
+    Write-Host "Invalid option. Exiting."
+    exit 1
+}
+
+$testSuiteArg = $selected.Arg
+Write-Host "You selected: $($selected.Name) ($testSuiteArg)"
+Write-Host ""
+
+<# =============================
+ 2. GET USER ID + PASSWORD
+============================= #>
+
+$userId = Read-Host "Enter User ID"
+
+# Secure password prompt
+$passwordSecure = Read-Host "Enter Password" -AsSecureString
+# Convert to plain text ONLY if you really must pass it as an argument
+# (Not recommended for security, but matches your requirement)
+$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($passwordSecure)
+$passwordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+
+<# =============================
+ 3. SEND "STARTING" EMAIL
+============================= #>
+
+$startTime = Get-Date
+
+$startSubject = "Automation starting: $($selected.Name) by $userId"
+$startBody = @"
+Automation run is starting.
+
+Suite   : $($selected.Name) ($testSuiteArg)
+User    : $userId
+Started : $startTime
+
+This email was triggered BEFORE running the .bat file.
+"@
+
+Send-MailMessage -From $fromEmail -To $toEmail `
+                 -Subject $startSubject -Body $startBody `
+                 -SmtpServer $smtpServer
+
+Write-Host "Start email sent."
+Write-Host ""
+
+<# =============================
+ 4. RUN THE BAT FILE
+============================= #>
+
+Write-Host "Running bat file..."
+Write-Host "$batFile $testSuiteArg $userId ******"
+
+# Call .bat with: suite, user id, password
+& $batFile $testSuiteArg $userId $passwordPlain
+$exitCode = $LASTEXITCODE
+
+Write-Host "Bat finished with exit code: $exitCode"
+Write-Host ""
+
+<# =============================
+ 5. PARSE HTML REPORTS
+   (COUNT PASS / FAIL)
+============================= #>
+
+if (-not (Test-Path $reportFolder)) {
+    Write-Host "Report folder not found: $reportFolder"
+    exit 1
+}
+
+$passTotal = 0
+$failTotal = 0
+
+# Example: count occurrences of 'pass' and 'fail' (case-insensitive)
+# You can adjust regex to match your actual report format
+Get-ChildItem $reportFolder -Filter *.html | ForEach-Object {
+    $content = Get-Content $_.FullName -Raw
+
+    $passTotal += ([regex]::Matches(
+        $content, 'pass', 
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )).Count
+
+    $failTotal += ([regex]::Matches(
+        $content, 'fail', 
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )).Count
+}
+
+$endTime = Get-Date
+
+Write-Host "Total Pass: $passTotal"
+Write-Host "Total Fail: $failTotal"
+Write-Host ""
+
+<# =============================
+ 6. SEND "COMPLETED" EMAIL
+============================= #>
+
+$endSubject = "Automation completed: $($selected.Name) | Pass: $passTotal, Fail: $failTotal"
+
+$endBody = @"
+Automation run completed.
+
+Suite    : $($selected.Name) ($testSuiteArg)
+User     : $userId
+Started  : $startTime
+Finished : $endTime
+ExitCode : $exitCode
+
+Total Pass : $passTotal
+Total Fail : $failTotal
+
+Reports Folder:
+$reportFolder
+"@
+
+# Attach all HTML reports (optional – you can remove -Attachments line)
+$attachments = (Get-ChildItem $reportFolder -Filter *.html).FullName
+
+Send-MailMessage -From $fromEmail -To $toEmail `
+                 -Subject $endSubject -Body $endBody `
+                 -SmtpServer $smtpServer `
+                 -Attachments $attachments
+
+Write-Host "Summary email sent."
